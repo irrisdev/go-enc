@@ -15,7 +15,7 @@ import (
 	"github.com/irrisdev/go-enc/internal"
 )
 
-func Encrypt(pass string, filename string) {
+func Encrypt(pass string, filename string, deleteOrignal ...bool) {
 
 	// generate salt
 	salt, err := internal.GenerateSalt16()
@@ -106,11 +106,24 @@ func Encrypt(pass string, filename string) {
 		}
 
 		if err == io.EOF {
+			inFile.Close()
 			break
 		}
 
 		if err != nil {
 			panic(err)
+		}
+	}
+
+	// fsync guarantee file write
+	if err := outFile.Sync(); err != nil {
+		outFile.Close()
+		log.Fatal(err)
+	}
+
+	if len(deleteOrignal) > 0 && deleteOrignal[0] {
+		if err := os.Remove(filename); err != nil {
+			log.Fatalf("failed to remove original file: %v\n", err)
 		}
 	}
 

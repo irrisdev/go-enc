@@ -11,42 +11,30 @@ import (
 
 const MinPassLen = 10
 
+type Config struct {
+	Encrypt      bool
+	Decrypt      bool
+	DeleteOrigin bool
+	OutPath      string
+	Passphrase   string
+	File         string
+}
+
 func main() {
 
-	// encrypt flag
-	encrypt := flag.Bool("encrypt", false, "use encryption")
-	flag.BoolVar(encrypt, "e", false, "shorthand for -encrypt")
-
-	// decrypt flag
-	decrypt := flag.Bool("decrypt", false, "use decryption")
-	flag.BoolVar(decrypt, "d", false, "shorthand for -decrypt")
-
-	// outfile flag
-	outfile := flag.String("outpath", "", "enter outfile path")
-	flag.StringVar(outfile, "o", "", "shortand for outfile path -outpath")
-
-	// passphrase flag
-	passphrase := flag.String("passphrase", "", "enter encryption passphrase")
-	flag.StringVar(passphrase, "pass", "", "shorthand for -passphrase")
-	flag.StringVar(passphrase, "p", "", "shorthand for -passphrase")
-
-	// path flag
-	path := flag.String("file", "", "enter path to file")
-	flag.StringVar(path, "f", "", "shorthand for -file")
-
-	flag.Parse()
+	args := ParseFlags()
 
 	// must choose exactly one mode
-	if *encrypt == *decrypt {
+	if args.Encrypt == args.Decrypt {
 		log.Fatal("must specify exactly one option of -encrypt or -decrypt")
 	}
 
 	// file path required
-	if *path == "" {
+	if args.File == "" {
 		log.Fatal("file path required")
 	}
 
-	info, err := os.Stat(*path)
+	info, err := os.Stat(args.File)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			log.Fatal("file does not exist")
@@ -59,25 +47,55 @@ func main() {
 	}
 
 	// passphrase required
-	if *passphrase == "" {
+	if args.Passphrase == "" {
 		log.Fatal("passphrase required")
 	}
 
-	if len(*passphrase) < MinPassLen {
+	if len(args.Passphrase) < MinPassLen {
 		log.Fatalf("minimum passphrase length: %d chars", MinPassLen)
 	}
 
-	if *encrypt {
-		genc.Encrypt(*passphrase, *path)
-	}
-
-	if *decrypt {
-		if *outfile == "" {
-			genc.Decrypt(*passphrase, *path)
-
+	if args.Encrypt {
+		if args.DeleteOrigin {
+			genc.Encrypt(args.Passphrase, args.File, args.DeleteOrigin)
 		} else {
-			genc.Decrypt(*passphrase, *path, *outfile)
+			genc.Encrypt(args.Passphrase, args.File)
 		}
 	}
 
+	if args.Decrypt {
+		if args.OutPath == "" {
+			genc.Decrypt(args.Passphrase, args.File)
+
+		} else {
+			genc.Decrypt(args.Passphrase, args.File, args.OutPath)
+		}
+	}
+
+}
+
+func ParseFlags() *Config {
+	cfg := &Config{}
+
+	flag.BoolVar(&cfg.Encrypt, "encrypt", false, "use encryption")
+	flag.BoolVar(&cfg.Encrypt, "e", false, "shorthand for -encrypt")
+
+	flag.BoolVar(&cfg.Decrypt, "decrypt", false, "use decryption")
+	flag.BoolVar(&cfg.Decrypt, "d", false, "shorthand for -decrypt")
+
+	flag.BoolVar(&cfg.DeleteOrigin, "delete-origin", false, "remove origin file after encryption")
+	flag.BoolVar(&cfg.DeleteOrigin, "do", false, "shorthand for -delete-origin")
+
+	flag.StringVar(&cfg.OutPath, "outpath", "", "enter outfile path")
+	flag.StringVar(&cfg.OutPath, "o", "", "shorthand for -outpath")
+
+	flag.StringVar(&cfg.Passphrase, "passphrase", "", "enter encryption passphrase")
+	flag.StringVar(&cfg.Passphrase, "p", "", "shorthand for -passphrase")
+	flag.StringVar(&cfg.Passphrase, "pass", "", "shorthand for -passphrase")
+
+	flag.StringVar(&cfg.File, "file", "", "enter path to file")
+	flag.StringVar(&cfg.File, "f", "", "shorthand for -file")
+
+	flag.Parse()
+	return cfg
 }
