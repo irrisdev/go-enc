@@ -27,7 +27,7 @@ func Execute() {
 }
 
 func init() {
-	// rootCmd.CompletionOptions.DisableDefaultCmd = true
+	rootCmd.CompletionOptions.DisableDefaultCmd = true
 	rootCmd.PersistentFlags().StringVarP(&file, "file", "f", "", "path to file")
 	rootCmd.PersistentFlags().StringVarP(&passphrase, "passphrase", "p", "", "encryption passphrase")
 

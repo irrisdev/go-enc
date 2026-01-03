@@ -5,6 +5,7 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -13,6 +14,16 @@ import (
 	"strings"
 
 	"github.com/irrisdev/go-enc/internal"
+)
+
+var (
+	ErrNewSalt      = errors.New("failed to generate salt")
+	ErrNewCipher    = errors.New("failed to create cipher block")
+	ErrNewGcm       = errors.New("failed to create new GCM")
+	ErrNewNonce     = errors.New("failed to generate random nonce")
+	ErrChunkTooBig  = errors.New("slice too large to encode as uint32")
+	ErrRemoveOrigin = errors.New("failed to remove original file")
+	ErrBakFile      = errors.New("failed to backup file")
 )
 
 func Encrypt(pass string, filename string, deleteOrignal ...bool) {
