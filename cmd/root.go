@@ -17,6 +17,7 @@ var (
 var rootCmd = &cobra.Command{
 	Use:   "go-enc",
 	Short: "Encrypt and decrypt files",
+	Long:  `A CLI tool for encrypting and decrypting files with AES encryption.`,
 }
 
 func Execute() {
@@ -28,8 +29,8 @@ func Execute() {
 
 func init() {
 	rootCmd.CompletionOptions.DisableDefaultCmd = true
-	rootCmd.PersistentFlags().StringVarP(&file, "file", "f", "", "path to file")
-	rootCmd.PersistentFlags().StringVarP(&passphrase, "passphrase", "p", "", "encryption passphrase")
+	rootCmd.PersistentFlags().StringVarP(&file, "file", "f", "", "path to file (required)")
+	rootCmd.PersistentFlags().StringVarP(&passphrase, "passphrase", "p", "", "encryption passphrase (required)")
 
 	rootCmd.MarkPersistentFlagRequired("file")
 	rootCmd.MarkPersistentFlagRequired("passphrase")

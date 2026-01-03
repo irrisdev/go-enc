@@ -11,27 +11,33 @@ import (
 	"log"
 	"math"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/irrisdev/go-enc/internal"
 )
 
 var (
-	ErrNewSalt      = errors.New("failed to generate salt")
-	ErrNewCipher    = errors.New("failed to create cipher block")
-	ErrNewGcm       = errors.New("failed to create new GCM")
-	ErrNewNonce     = errors.New("failed to generate random nonce")
-	ErrChunkTooBig  = errors.New("slice too large to encode as uint32")
-	ErrRemoveOrigin = errors.New("failed to remove original file")
-	ErrBakFile      = errors.New("failed to backup file")
+	ErrNewSalt       = errors.New("failed to generate salt")
+	ErrNewCipher     = errors.New("failed to create cipher block")
+	ErrNewGcm        = errors.New("failed to create new GCM")
+	ErrNewNonce      = errors.New("failed to generate random nonce")
+	ErrChunkTooLarge = errors.New("slice too large to encode as uint32")
+	ErrRemoveOrigin  = errors.New("failed to remove original file")
+	ErrBakFile       = errors.New("failed to backup file")
+	ErrSyncEncFile   = errors.New("failed to sync encrypted file")
+	ErrOpenFile      = errors.New("failed to open file")
+	ErrCreateFile    = errors.New("failed to create file")
+	ErrWriteHeader   = errors.New("failed to write file header")
+	ErrReadHeader    = errors.New("failed to read file header")
 )
 
-func Encrypt(pass string, filename string, deleteOrignal ...bool) {
+func Encrypt(pass string, filename string, deleteOrignal ...bool) error {
 
 	// generate salt
 	salt, err := internal.GenerateSalt16()
 	if err != nil {
-		log.Fatal("failed to generate salt")
+		return fmt.Errorf("%w: %w", ErrNewSalt, err)
 	}
 
 	// generate hash using argon2id
@@ -40,37 +46,35 @@ func Encrypt(pass string, filename string, deleteOrignal ...bool) {
 	// create aes block
 	block, err := aes.NewCipher(hash)
 	if err != nil {
-		log.Fatal("failed to create cipher block")
+		return fmt.Errorf("%w: %w", ErrNewCipher, err)
 	}
 
 	// create new gcm
 	gcm, err := cipher.NewGCM(block)
 	if err != nil {
-		log.Fatal("failed to create new GCM")
-
+		return fmt.Errorf("%w: %w", ErrNewGcm, err)
 	}
 
 	// open source file
 	inFile, err := os.Open(filename)
 	if err != nil {
-		log.Fatal(err)
+		return fmt.Errorf("%w: %w", ErrOpenFile, err)
 	}
 	defer inFile.Close()
 
 	// create encrypted destination file - truncates if already exists
 	outFile, err := os.Create(fmt.Sprintf("%s.genc", filename))
 	if err != nil {
-		log.Fatal(err)
+		return fmt.Errorf("%w: %w", ErrCreateFile, err)
 	}
 	defer outFile.Close()
 
-	// defer recovery function to close and delete incomplete dst file
+	// check if is completed when function returns otherwise delete outFile
+	completed := false
 	defer func() {
-		if r := recover(); r != nil {
-			log.Printf("closing and removing %s\n", outFile.Name())
-			outFile.Close()
+		if !completed {
 			os.Remove(outFile.Name())
-			log.Fatalf("recovered panic: %v", r)
+			log.Println("encryption failed")
 		}
 	}()
 
@@ -82,8 +86,9 @@ func Encrypt(pass string, filename string, deleteOrignal ...bool) {
 	// encode and write file header
 	header := internal.EncodeHeader(hash, salt)
 
-	// fmt.Printf("writing file header: size = %d bytes\n", len(header))
-	writer.Write(header)
+	if _, err := writer.Write(header); err != nil {
+		return fmt.Errorf("%w: %w", ErrWriteHeader, err)
+	}
 
 	buf := make([]byte, internal.ChunkSize) // 1MiB
 
@@ -95,7 +100,7 @@ func Encrypt(pass string, filename string, deleteOrignal ...bool) {
 			nonce := make([]byte, gcm.NonceSize())
 			_, err = io.ReadFull(rand.Reader, nonce)
 			if err != nil {
-				panic("failed to generate random nonce")
+				return fmt.Errorf("%w: %w", ErrNewNonce, err)
 			}
 
 			// encrypt plaintext using random nonce and buf[:n]
@@ -103,12 +108,10 @@ func Encrypt(pass string, filename string, deleteOrignal ...bool) {
 
 			// encode the chunk header
 			if len(ciphertext) > math.MaxUint32 {
-				panic("slice too large to encode as uint32")
+				return fmt.Errorf("%w: %w", ErrChunkTooLarge, err)
 			}
 
 			header := internal.EncodeChunkHeader(uint32(len(ciphertext)), nonce)
-			// fmt.Printf("writing chunk header: size = %d bytes\n", len(header))
-			// fmt.Printf("cipher size: %d\n", len(ciphertext))
 
 			// write header first then ciphertext
 			writer.Write(header)
@@ -117,35 +120,37 @@ func Encrypt(pass string, filename string, deleteOrignal ...bool) {
 		}
 
 		if err == io.EOF {
-			inFile.Close()
 			break
 		}
 
 		if err != nil {
-			panic(err)
+			return err
 		}
 	}
 
 	// fsync guarantee file write
 	if err := outFile.Sync(); err != nil {
-		outFile.Close()
-		log.Fatal(err)
+		return fmt.Errorf("%w: %w", ErrSyncEncFile, err)
 	}
+
+	completed = true
 
 	if len(deleteOrignal) > 0 && deleteOrignal[0] {
 		if err := os.Remove(filename); err != nil {
-			log.Fatalf("failed to remove original file: %v\n", err)
+			return ErrRemoveOrigin
 		}
 	}
 
+	return nil
 }
 
-func Decrypt(pass string, filename string, outpath ...string) {
+func Decrypt(pass string, filename string, outpath ...string) error {
+	completed := false
 
 	// open file
 	file, err := os.Open(filename)
 	if err != nil {
-		log.Fatal(err)
+		return fmt.Errorf("%w: %w", ErrOpenFile, err)
 	}
 	defer file.Close()
 
@@ -161,28 +166,22 @@ func Decrypt(pass string, filename string, outpath ...string) {
 	if internal.FileExists(path) {
 		backup := fmt.Sprintf("%s.bak", path)
 
-		log.Println("file already exists, creating a backup")
+		log.Printf("output file %s already exists, creating backup at: %s\n", filepath.Base(path), backup)
 
 		if err := internal.CopyFile(path, backup); err != nil {
-			log.Fatalf("failed to create backup: %v\n", err)
+			return fmt.Errorf("%w: %w", ErrBakFile, err)
 		}
-
-		log.Printf("backup created at: %s\n", backup)
 	}
 
 	outFile, err := os.Create(path)
 	if err != nil {
-		log.Fatal(err)
+		return fmt.Errorf("%w: %w", ErrCreateFile, err)
 	}
 
-	// defer panic function for unexcpected panic
 	defer func() {
-		if r := recover(); r != nil {
-			log.Printf("closing %s\n", file.Name())
-			file.Close()
-			outFile.Close()
+		if !completed {
 			os.Remove(outFile.Name())
-			log.Fatalf("recovered panic: %v", r)
+			log.Println("decryption failed")
 		}
 	}()
 
@@ -197,13 +196,13 @@ func Decrypt(pass string, filename string, outpath ...string) {
 	// read full 52 bytes of header, err if cannot
 	_, err = io.ReadFull(reader, headerBuf)
 	if err != nil {
-		log.Fatalf("failed to read file header: %s", err.Error())
+		return fmt.Errorf("%w: %w", ErrReadHeader, err)
 	}
 
 	// decode and validate header matches magic
 	header, err := internal.DecodeHeader(headerBuf)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	hash, _ := internal.GetArgon2ID(pass, header.Salt[:])
@@ -211,25 +210,24 @@ func Decrypt(pass string, filename string, outpath ...string) {
 	// create aes block
 	block, err := aes.NewCipher(hash)
 	if err != nil {
-		log.Fatal("failed to create cipher block")
+		return fmt.Errorf("%w: %w", ErrNewCipher, err)
 	}
 
 	// create new gcm
 	gcm, err := cipher.NewGCM(block)
 	if err != nil {
-		log.Fatal("failed to create new GCM")
-
+		return fmt.Errorf("%w: %w", ErrNewGcm, err)
 	}
 
 	for {
 		// read 15 byte chunk header
-		chunkHeader, err := internal.ReadChunkHeader(reader)
-		if err == io.EOF || err == io.ErrUnexpectedEOF {
+		chunkHeader, chunkErr := internal.ReadChunkHeader(reader)
+		if chunkErr == io.EOF || chunkErr == io.ErrUnexpectedEOF { // unsure if ErrUnexpectedEOF should return error
 			break
 		}
 
-		if err != nil {
-			panic(err)
+		if chunkErr != nil {
+			return err
 		}
 
 		// create dynamic buffer to chunk size
@@ -242,7 +240,7 @@ func Decrypt(pass string, filename string, outpath ...string) {
 			// attempt to decrypt chunk using nonce in header
 			plaintext, gcmErr := gcm.Open(nil, chunkHeader.Nonce[:], buf, nil)
 			if gcmErr != nil {
-				panic(gcmErr)
+				return fmt.Errorf("%w: %w", gcmErr, gcmErr)
 			}
 			writer.Write(plaintext)
 		}
@@ -252,10 +250,11 @@ func Decrypt(pass string, filename string, outpath ...string) {
 		}
 
 		if err != nil {
-			panic(err)
+			return err
 		}
 	}
-	// fmt.Println(string(header.Magic[:]))
-	// fmt.Println(base64.RawStdEncoding.EncodeToString(header.Salt[:]))
 
+	completed = true
+
+	return nil
 }
