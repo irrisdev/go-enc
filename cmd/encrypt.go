@@ -1,3 +1,20 @@
+/*
+Copyright © 2026 irrisdev lithium8260@proton.me
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program. If not, see <http://www.gnu.org/licenses/>.
+*/
+
 package cmd
 
 import (
@@ -57,13 +74,16 @@ var encryptCmd = &cobra.Command{
 			return fmt.Errorf("encryption failed: %w", err)
 		}
 
-		fmt.Printf("successfully encrypted: %s\n", file)
+		fmt.Printf("Successfully encrypted: %s -> %s.genc\n", file, file)
 
 		return nil
 	},
 }
 
 func init() {
+	encryptCmd.MarkPersistentFlagRequired("file")
+	encryptCmd.MarkPersistentFlagRequired("passphrase")
 	encryptCmd.Flags().BoolVar(&deleteOrigin, "delete-origin", false, "remove original file after encryption")
 	rootCmd.AddCommand(encryptCmd)
+
 }
