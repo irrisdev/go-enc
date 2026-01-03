@@ -32,13 +32,9 @@ var (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "go-enc",
-	Short: "Encrypt and decrypt files",
-	Long: `go-enc - A CLI tool for encrypting and decrypting files using AES-256
-
-Author:  irrisdev stir-amply-frying@duck.com
-License: GPL-3.0
-Project: https://github.com/irrisdev/go-enc`,
+	Use:     "go-enc",
+	Short:   "Encrypt and decrypt files",
+	Long:    `go-enc - A CLI tool for encrypting and decrypting files using AES-256`,
 	Version: "1.0",
 }
 
